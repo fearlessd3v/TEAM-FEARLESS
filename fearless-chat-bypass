@@ -1,0 +1,2 @@
+-- THIS SCRIPT IS PROTECTED BY MULTIPLE OBFUSCATIONS — Any attempt to reverse-engineer, modify, or analyze the code may result in malfunction or detection.
+loadstring(game:HttpGet("https://api.junkie-development.de/api/v1/luascripts/public/3126a77c9c7da71732a0a62431ed581736505033ee02d866745ddd0faa65433b/download"))()
