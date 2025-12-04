@@ -1,2 +1,24 @@
+-- [[
+
+  _____                   .__                          
+_/ ____\____ _____ _______|  |   ____   ______ ______  
+\   __\/ __ \\__  \\_  __ \  | _/ __ \ /  ___//  ___/  
+ |  | \  ___/ / __ \|  | \/  |_\  ___/ \___ \ \___ \   
+ |__|  \___  >____  /__|  |____/\___  >____  >____  >  
+           \/     \/                \/     \/     \/   
+       .__            __                               
+  ____ |  |__ _____ _/  |_                             
+_/ ___\|  |  \\__  \\   __\                            
+\  \___|   Y  \/ __ \|  |                              
+ \___  >___|  (____  /__|                              
+     \/     \/     \/                                  
+___.                                                   
+\_ |__ ___.__.___________    ______ ______ ___________ 
+ | __ <   |  |\____ \__  \  /  ___//  ___// __ \_  __ \
+ | \_\ \___  ||  |_> > __ \_\___ \ \___ \\  ___/|  | \/
+ |___  / ____||   __(____  /____  >____  >\___  >__|   
+     \/\/     |__|       \/     \/     \/     \/       
+]]
+
 -- THIS SCRIPT IS PROTECTED BY MULTIPLE OBFUSCATIONS — Any attempt to reverse-engineer, modify, or analyze the code may result in malfunction or detection.
-loadstring(game:HttpGet("https://api.junkie-development.de/api/v1/luascripts/public/3126a77c9c7da71732a0a62431ed581736505033ee02d866745ddd0faa65433b/download"))()
+loadstring(game:HttpGetAsync("https://api.junkie-development.de/api/v1/luascripts/public/3126a77c9c7da71732a0a62431ed581736505033ee02d866745ddd0faa65433b/download"))()
