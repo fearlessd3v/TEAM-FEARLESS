@@ -44,5 +44,5 @@
 
 
 
-
-loadstring(game:HttpGetAsync("https://github.com/fearlessd3v/TEAM-FEARLESS/blob/main/fearlesschatbypasser"))()
+getgenv().SCRIPT_KEY = "key"
+loadstring(game:HttpGetAsync("https://api.jnkie.com/api/v1/luascripts/public/3126a77c9c7da71732a0a62431ed581736505033ee02d866745ddd0faa65433b/download"))()
