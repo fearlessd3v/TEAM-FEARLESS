@@ -16,6 +16,7 @@
 
 
   ]]  -- https://discord.gg/33t2y6Avt6
+      -- .gg/fearlessx 
       -- dsc.gg/fearlessbyp
 
 
@@ -44,4 +45,5 @@
 
 
 
-loadstring(game:HttpGetAsync("https://raw.githubusercontent.com/fearlessd3v/TEAM-FEARLESS/refs/heads/main/fearlesschatbypasser"))()
+getgenv().SCRIPT_KEY = "shit"
+loadstring(game:HttpGet("https://api.jnkie.com/api/v1/luascripts/public/535d633266bc71f90528d9b1be38596e7a6819fad402b2e13726637773c8af60/download"))()
