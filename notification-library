@@ -8,7 +8,6 @@ local library
 local templateFolder
 local canvas
 
-
 local TweenFast = TweenInfo.new(0.25, Enum.EasingStyle.Quint, Enum.EasingDirection.Out)
 local TweenSmooth = TweenInfo.new(0.35, Enum.EasingStyle.Quint, Enum.EasingDirection.Out)
 local TweenFade = TweenInfo.new(0.2, Enum.EasingStyle.Linear, Enum.EasingDirection.Out)
@@ -17,7 +16,6 @@ function NotificationLibrary:Load()
     library = game:GetObjects("rbxassetid://15133757123")[1]
     templateFolder = library.Templates
     canvas = library.list
-
     library.Name = LibraryName
     library.Parent = CoreGui
 end
@@ -52,12 +50,11 @@ function NotificationLibrary:SendNotification(Mode, Text, Duration)
             Notification.Parent = canvas
             Notification.Visible = true
 
-          
             Notification.BackgroundTransparency = 1
             Notification.Size = UDim2.new(0, 0, 0.085, 0)
             filler.Size = UDim2.new(1, 0, 1, 0)
             bar.Size = UDim2.new(0, 0, 0.05, 0)
-            e)
+
             TweenService:Create(Notification, TweenSmooth, {
                 BackgroundTransparency = 0,
                 Size = UDim2.new(1, 0, 0.085, 0)
@@ -65,19 +62,16 @@ function NotificationLibrary:SendNotification(Mode, Text, Duration)
 
             task.wait(0.12)
 
-            
             TweenService:Create(filler, TweenSmooth, {
                 Size = UDim2.new(0.015, 0, 1, 0)
             }):Play()
 
-            
             TweenService:Create(bar, TweenInfo.new(Duration, Enum.EasingStyle.Linear), {
                 Size = UDim2.new(1, 0, 0.05, 0)
             }):Play()
 
             task.wait(Duration)
 
-            
             TweenService:Create(filler, TweenFast, {
                 Size = UDim2.new(1, 0, 1, 0)
             }):Play()
