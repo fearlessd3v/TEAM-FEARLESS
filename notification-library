@@ -1,230 +1,198 @@
-local LibraryName = "Notification Library"
-local NotificationLibrary = {}
+local Nofitication = {}
 
-local TweenService = game:GetService("TweenService")
-local CoreGui = cloneref(game:GetService("CoreGui"))
+local GUI = game:GetService("CoreGui"):FindFirstChild("STX_Nofitication")
 
-local library
-local canvas
-
-local THEMES = {
-    Success = {
-        primary = Color3.fromRGB(34, 197, 94),
-        secondary = Color3.fromRGB(22, 163, 74),
-        glow = Color3.fromRGB(134, 239, 172),
-        icon = "✓"
-    },
-    Error = {
-        primary = Color3.fromRGB(239, 68, 68),
-        secondary = Color3.fromRGB(220, 38, 38),
-        glow = Color3.fromRGB(252, 165, 165),
-        icon = "✕"
-    },
-    Warning = {
-        primary = Color3.fromRGB(245, 158, 11),
-        secondary = Color3.fromRGB(217, 119, 6),
-        glow = Color3.fromRGB(253, 230, 138),
-        icon = "⚠"
-    },
-    Info = {
-        primary = Color3.fromRGB(59, 130, 246),
-        secondary = Color3.fromRGB(37, 99, 235),
-        glow = Color3.fromRGB(147, 197, 253),
-        icon = "ℹ"
-    }
-}
-
-function NotificationLibrary:Load()
-    local screen = Instance.new("ScreenGui")
-    screen.Name = LibraryName
-    screen.ResetOnSpawn = false
-    screen.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
-    screen.Parent = CoreGui
+function Nofitication:Notify(nofdebug, middledebug, all)
+    local SelectedType = string.lower(tostring(middledebug.Type))
+    local ambientShadow = Instance.new("ImageLabel")
+    local Window = Instance.new("Frame")
+    local WindowCorner = Instance.new("UICorner")
+    local Outline_A = Instance.new("Frame")
+    local WindowTitle = Instance.new("TextLabel")
+    local WindowDescription = Instance.new("TextLabel")
     
-    local holder = Instance.new("Frame")
-    holder.Name = "list"
-    holder.AnchorPoint = Vector2.new(1, 0)
-    holder.Position = UDim2.new(1, -25, 0, 25)
-    holder.Size = UDim2.new(0, 380, 1, -50)
-    holder.BackgroundTransparency = 1
-    holder.Parent = screen
+    ambientShadow.Name = "ambientShadow"
+    ambientShadow.Parent = GUI
+    ambientShadow.AnchorPoint = Vector2.new(0.5, 0.5)
+    ambientShadow.BackgroundTransparency = 1.000
+    ambientShadow.BorderSizePixel = 0
+    ambientShadow.Position = UDim2.new(0.91525954, 0, 0.88, 0) -- slightly higher
+    ambientShadow.Size = UDim2.new(0, 0, 0, 0)
+    ambientShadow.Image = "rbxassetid://1316045217"
+    ambientShadow.ImageColor3 = Color3.fromRGB(0, 0, 0)
+    ambientShadow.ImageTransparency = 0.400
+    ambientShadow.ScaleType = Enum.ScaleType.Slice
+    ambientShadow.SliceCenter = Rect.new(10, 10, 118, 118)
     
-    local layout = Instance.new("UIListLayout")
-    layout.SortOrder = Enum.SortOrder.LayoutOrder
-    layout.Padding = UDim.new(0, 15)
-    layout.Parent = holder
-    
-    library = screen
-    canvas = holder
-end
+    Window.Name = "Window"
+    Window.Parent = ambientShadow
+    Window.BackgroundColor3 = Color3.fromRGB(8, 8, 8) -- black
+    Window.BorderSizePixel = 0
+    Window.Position = UDim2.new(0, 5, 0, 5)
+    Window.Size = UDim2.new(0, 230, 0, 80)
+    Window.ZIndex = 2
+    Window.ClipsDescendants = true -- keeps children inside rounded corners
 
-local function getLibrary()
-    local existing = CoreGui:FindFirstChild(LibraryName)
-    if not existing then
-        NotificationLibrary:Load()
-    else
-        library = existing
-        canvas = library.list
+    WindowCorner.Name = "WindowCorner"
+    WindowCorner.CornerRadius = UDim.new(0, 6) -- rounded but subtle, keeps square feel
+    WindowCorner.Parent = Window
+    
+    Outline_A.Name = "Outline_A"
+    Outline_A.Parent = Window
+    Outline_A.BackgroundColor3 = middledebug.OutlineColor
+    Outline_A.BorderSizePixel = 0
+    Outline_A.Position = UDim2.new(0, 0, 0, 25)
+    Outline_A.Size = UDim2.new(0, 230, 0, 2)
+    Outline_A.ZIndex = 5
+    
+    WindowTitle.Name = "WindowTitle"
+    WindowTitle.Parent = Window
+    WindowTitle.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
+    WindowTitle.BackgroundTransparency = 1.000
+    WindowTitle.BorderColor3 = Color3.fromRGB(27, 42, 53)
+    WindowTitle.BorderSizePixel = 0
+    WindowTitle.Position = UDim2.new(0, 8, 0, 2)
+    WindowTitle.Size = UDim2.new(0, 222, 0, 22)
+    WindowTitle.ZIndex = 4
+    WindowTitle.Font = Enum.Font.GothamSemibold
+    WindowTitle.Text = nofdebug.Title
+    WindowTitle.TextColor3 = Color3.fromRGB(220, 220, 220)
+    WindowTitle.TextSize = 12.000
+    WindowTitle.TextXAlignment = Enum.TextXAlignment.Left
+    
+    WindowDescription.Name = "WindowDescription"
+    WindowDescription.Parent = Window
+    WindowDescription.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
+    WindowDescription.BackgroundTransparency = 1.000
+    WindowDescription.BorderColor3 = Color3.fromRGB(27, 42, 53)
+    WindowDescription.BorderSizePixel = 0
+    WindowDescription.Position = UDim2.new(0, 8, 0, 34)
+    WindowDescription.Size = UDim2.new(0, 216, 0, 40)
+    WindowDescription.ZIndex = 4
+    WindowDescription.Font = Enum.Font.GothamSemibold
+    WindowDescription.Text = nofdebug.Description
+    WindowDescription.TextColor3 = Color3.fromRGB(180, 180, 180)
+    WindowDescription.TextSize = 12.000
+    WindowDescription.TextWrapped = true
+    WindowDescription.TextXAlignment = Enum.TextXAlignment.Left
+    WindowDescription.TextYAlignment = Enum.TextYAlignment.Top
+
+    if SelectedType == "default" then
+        local function ORBHB_fake_script()
+            local script = Instance.new('LocalScript', ambientShadow)
+        
+            ambientShadow:TweenSize(UDim2.new(0, 240, 0, 90), "Out", "Linear", 0.2)
+            Window.Size = UDim2.new(0, 230, 0, 80)
+            Outline_A:TweenSize(UDim2.new(0, 0, 0, 2), "Out", "Linear", middledebug.Time)
+    
+            wait(middledebug.Time)
+        
+            ambientShadow:TweenSize(UDim2.new(0, 0, 0, 0), "Out", "Linear", 0.2)
+            
+            wait(0.2)
+            ambientShadow:Destroy()
+        end
+        coroutine.wrap(ORBHB_fake_script)()
+    elseif SelectedType == "image" then
+        ambientShadow:TweenSize(UDim2.new(0, 240, 0, 90), "Out", "Linear", 0.2)
+        Window.Size = UDim2.new(0, 230, 0, 80)
+        WindowTitle.Position = UDim2.new(0, 24, 0, 2)
+        local ImageButton = Instance.new("ImageButton")
+        ImageButton.Parent = Window
+        ImageButton.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
+        ImageButton.BackgroundTransparency = 1.000
+        ImageButton.BorderSizePixel = 0
+        ImageButton.Position = UDim2.new(0, 4, 0, 4)
+        ImageButton.Size = UDim2.new(0, 18, 0, 18)
+        ImageButton.ZIndex = 5
+        ImageButton.AutoButtonColor = false
+        ImageButton.Image = all.Image
+        ImageButton.ImageColor3 = all.ImageColor
+
+        local function ORBHB_fake_script()
+            local script = Instance.new('LocalScript', ambientShadow)
+        
+            Outline_A:TweenSize(UDim2.new(0, 0, 0, 2), "Out", "Linear", middledebug.Time)
+
+            wait(middledebug.Time)
+        
+            ambientShadow:TweenSize(UDim2.new(0, 0, 0, 0), "Out", "Linear", 0.2)
+            
+            wait(0.2)
+            ambientShadow:Destroy()
+        end
+        coroutine.wrap(ORBHB_fake_script)()
+    elseif SelectedType == "option" then
+        ambientShadow:TweenSize(UDim2.new(0, 240, 0, 110), "Out", "Linear", 0.2)
+        Window.Size = UDim2.new(0, 230, 0, 100)
+        local Uncheck = Instance.new("ImageButton")
+        local Check = Instance.new("ImageButton")
+        
+        Uncheck.Name = "Uncheck"
+        Uncheck.Parent = Window
+        Uncheck.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
+        Uncheck.BackgroundTransparency = 1.000
+        Uncheck.BorderSizePixel = 0
+        Uncheck.Position = UDim2.new(0, 7, 0, 76)
+        Uncheck.Size = UDim2.new(0, 18, 0, 18)
+        Uncheck.ZIndex = 5
+        Uncheck.AutoButtonColor = false
+        Uncheck.Image = "http://www.roblox.com/asset/?id=6031094678"
+        Uncheck.ImageColor3 = Color3.fromRGB(255, 84, 84)
+        
+        Check.Name = "Check"
+        Check.Parent = Window
+        Check.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
+        Check.BackgroundTransparency = 1.000
+        Check.BorderSizePixel = 0
+        Check.Position = UDim2.new(0, 28, 0, 76)
+        Check.Size = UDim2.new(0, 18, 0, 18)
+        Check.ZIndex = 5
+        Check.AutoButtonColor = false
+        Check.Image = "http://www.roblox.com/asset/?id=6031094667"
+        Check.ImageColor3 = Color3.fromRGB(83, 230, 50)
+
+        local function ORBHB_fake_script()
+            local script = Instance.new('LocalScript', ambientShadow)
+        
+            local Stilthere = true
+            local function Unchecked()
+                pcall(function()
+                    all.Callback(false)
+                end)
+                ambientShadow:TweenSize(UDim2.new(0, 0, 0, 0), "Out", "Linear", 0.2)
+                
+                wait(0.2)
+                ambientShadow:Destroy()
+                Stilthere = false
+            end
+            local function Checked()
+                pcall(function()
+                    all.Callback(true)
+                end)
+                ambientShadow:TweenSize(UDim2.new(0, 0, 0, 0), "Out", "Linear", 0.2)
+                
+                wait(0.2)
+                ambientShadow:Destroy()
+                Stilthere = false
+            end
+            Uncheck.MouseButton1Click:Connect(Unchecked)
+            Check.MouseButton1Click:Connect(Checked)
+            
+            Outline_A:TweenSize(UDim2.new(0, 0, 0, 2), "Out", "Linear", middledebug.Time)
+    
+            wait(middledebug.Time)
+
+            if Stilthere == true then
+        
+                ambientShadow:TweenSize(UDim2.new(0, 0, 0, 0), "Out", "Linear", 0.2)
+                
+                wait(0.2)
+                ambientShadow:Destroy()
+            end
+        end
+        coroutine.wrap(ORBHB_fake_script)()
     end
 end
 
-local function createCard(theme, text)
-    local card = Instance.new("Frame")
-    card.Size = UDim2.new(0, 0, 0, 0)
-    card.BackgroundColor3 = Color3.fromRGB(20, 25, 35)
-    card.BorderSizePixel = 0
-    card.ClipsDescendants = true
-    
-    local corner = Instance.new("UICorner")
-    corner.CornerRadius = UDim.new(0, 14)
-    corner.Parent = card
-    
-    local stroke = Instance.new("UIStroke")
-    stroke.Color = theme.primary
-    stroke.Thickness = 2.5
-    stroke.Transparency = 0.4
-    stroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
-    stroke.Parent = card
-    
-    local accentBar = Instance.new("Frame")
-    accentBar.Size = UDim2.new(0, 5, 1, 0)
-    accentBar.BackgroundColor3 = theme.primary
-    accentBar.BorderSizePixel = 0
-    accentBar.Parent = card
-    
-    local barCorner = Instance.new("UICorner")
-    barCorner.CornerRadius = UDim.new(1, 0)
-    barCorner.Parent = accentBar
-    
-    local iconBg = Instance.new("Frame")
-    iconBg.Size = UDim2.new(0, 52, 0, 52)
-    iconBg.Position = UDim2.new(0, 18, 0.5, 0)
-    iconBg.AnchorPoint = Vector2.new(0, 0.5)
-    iconBg.BackgroundColor3 = theme.primary
-    iconBg.BorderSizePixel = 0
-    iconBg.Parent = card
-    
-    local iconCorner = Instance.new("UICorner")
-    iconCorner.CornerRadius = UDim.new(1, 0)
-    iconCorner.Parent = iconBg
-    
-    local iconText = Instance.new("TextLabel")
-    iconText.Size = UDim2.new(1, 0, 1, 0)
-    iconText.BackgroundTransparency = 1
-    iconText.Text = theme.icon
-    iconText.TextColor3 = Color3.fromRGB(255, 255, 255)
-    iconText.TextSize = 28
-    iconText.Font = Enum.Font.GothamBold
-    iconText.Parent = iconBg
-    
-    local glow = Instance.new("ImageLabel")
-    glow.Size = UDim2.new(0, 52, 0, 52)
-    glow.Position = UDim2.new(0, 18, 0.5, 0)
-    glow.AnchorPoint = Vector2.new(0, 0.5)
-    glow.BackgroundTransparency = 1
-    glow.Image = "rbxassetid://4996891970"
-    glow.ImageColor3 = theme.glow
-    glow.ImageTransparency = 0.5
-    glow.ZIndex = 0
-    glow.Parent = card
-    
-    local message = Instance.new("TextLabel")
-    message.Size = UDim2.new(1, -95, 1, -30)
-    message.Position = UDim2.new(0, 82, 0, 15)
-    message.BackgroundTransparency = 1
-    message.Text = text
-    message.TextColor3 = Color3.fromRGB(245, 245, 245)
-    message.TextSize = 16
-    message.Font = Enum.Font.GothamMedium
-    message.TextWrapped = true
-    message.TextXAlignment = Enum.TextXAlignment.Left
-    message.TextYAlignment = Enum.TextYAlignment.Top
-    message.Parent = card
-    
-    local progressBg = Instance.new("Frame")
-    progressBg.Size = UDim2.new(1, -36, 0, 4)
-    progressBg.Position = UDim2.new(0, 18, 1, -12)
-    progressBg.AnchorPoint = Vector2.new(0, 1)
-    progressBg.BackgroundColor3 = Color3.fromRGB(40, 45, 55)
-    progressBg.BorderSizePixel = 0
-    progressBg.Parent = card
-    
-    local progressCorner = Instance.new("UICorner")
-    progressCorner.CornerRadius = UDim.new(1, 0)
-    progressCorner.Parent = progressBg
-    
-    local progress = Instance.new("Frame")
-    progress.Size = UDim2.new(1, 0, 1, 0)
-    progress.BackgroundColor3 = theme.primary
-    progress.BorderSizePixel = 0
-    progress.Parent = progressBg
-    
-    local progressInnerCorner = Instance.new("UICorner")
-    progressInnerCorner.CornerRadius = UDim.new(1, 0)
-    progressInnerCorner.Parent = progress
-    
-    return card, progress, glow, iconBg, stroke
-end
-
-function NotificationLibrary:SendNotification(Mode, Text, Duration)
-    getLibrary()
-    
-    local theme = THEMES[Mode]
-    if not theme then
-        warn("Invalid theme applied")
-        return
-    end
-    
-    Duration = Duration or 4
-    
-    task.spawn(function()
-        local card, progress, glow, iconBg, stroke = createCard(theme, Text)
-        card.Parent = canvas
-        card.Position = UDim2.new(1.2, 0, 0, 0)
-        
-        local slideIn = TweenService:Create(card, TweenInfo.new(0.6, Enum.EasingStyle.Back, Enum.EasingDirection.Out), {
-            Position = UDim2.new(0, 0, 0, 0),
-            Size = UDim2.new(1, 0, 0, 95)
-        })
-        slideIn:Play()
-        
-        task.wait(0.2)
-        
-        local glowPulse = TweenService:Create(glow, TweenInfo.new(1.5, Enum.EasingStyle.Sine, Enum.EasingDirection.InOut, -1, true), {
-            ImageTransparency = 0.2,
-            Size = UDim2.new(0, 65, 0, 65)
-        })
-        glowPulse:Play()
-        
-        local iconSpin = TweenService:Create(iconBg, TweenInfo.new(0.7, Enum.EasingStyle.Elastic, Enum.EasingDirection.Out), {
-            Rotation = 360
-        })
-        iconSpin:Play()
-        
-        local strokeFade = TweenService:Create(stroke, TweenInfo.new(1.2, Enum.EasingStyle.Sine, Enum.EasingDirection.InOut, -1, true), {
-            Transparency = 0.7
-        })
-        strokeFade:Play()
-        
-        local progressTween = TweenService:Create(progress, TweenInfo.new(Duration, Enum.EasingStyle.Linear), {
-            Size = UDim2.new(0, 0, 1, 0)
-        })
-        progressTween:Play()
-        
-        task.wait(Duration)
-        
-        glowPulse:Cancel()
-        strokeFade:Cancel()
-        
-        local slideOut = TweenService:Create(card, TweenInfo.new(0.5, Enum.EasingStyle.Back, Enum.EasingDirection.In), {
-            Position = UDim2.new(1.2, 0, 0, 0),
-            Size = UDim2.new(0, 0, 0, 0)
-        })
-        slideOut:Play()
-        
-        task.wait(0.5)
-        card:Destroy()
-    end)
-end
-
-return NotificationLibrary
+return Nofitication
