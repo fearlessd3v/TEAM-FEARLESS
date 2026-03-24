@@ -45,5 +45,5 @@
 
 
 
-getgenv().SCRIPT_KEY = "shit"
-loadstring(game:HttpGet("https://api.jnkie.com/api/v1/luascripts/public/535d633266bc71f90528d9b1be38596e7a6819fad402b2e13726637773c8af60/download"))()
+getgenv().SCRIPT_KEY = "fearlesschatbypasser"
+loadstring(game:HttpGet("https://api.jnkie.com/api/v1/luascripts/public/eb8bef5ac133d8abf5c26e7638083c40efed19093956612deee010507f8b3106/download"))()
