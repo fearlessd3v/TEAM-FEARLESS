@@ -1,202 +1,807 @@
-local Notification = {}
+--[[
+	FEARLESS NOTCH
+	Dynamic-island style pill at the top center of the screen.
+	  * Idle:   small black pill (time + soft pulsing dot)
+	  * Click:  springs open into the info menu (avatar, name, players, FPS, ping, date, day, time)
+	  * Notify: notifications drop out of the notch and stack under each other
 
-local CoreGui = game:GetService("CoreGui")
+	Usage (same API as before):
+		local Notification = loadstring(game:HttpGet("YOUR_RAW_LINK"))()
+		Notification:Notify(
+			{ Title = "Hello", Description = "text" },
+			{ Type = "default", Time = 5, OutlineColor = Color3.fromRGB(0, 170, 255) }
+		)
+	Types: "default" | "image" (3rd table: Image, ImageColor) | "option" (3rd table: Callback(bool))
+
+	Extra:
+		Notification:ToggleMenu() / :OpenMenu() / :CloseMenu()
+		Notification.Config.IdleStyle = "time" | "cycle"   -- "cycle" rotates time / date / players / fps
+]]
+
+local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
+local TweenService = game:GetService("TweenService")
 local TextService = game:GetService("TextService")
+local CoreGui = game:GetService("CoreGui")
+local Stats = game:GetService("Stats")
 
+local player = Players.LocalPlayer
+local env = (getgenv and getgenv()) or _G
+
+-- remove a previous copy if the script is executed twice
+if env.__FCB_NOTCH_DESTROY then
+	pcall(env.__FCB_NOTCH_DESTROY)
+end
+
+local Notification = {}
+Notification.Config = {
+	IdleStyle = "time",
+	Accent = Color3.fromRGB(176, 130, 255),
+}
+local CFG = Notification.Config
+
+----------------------------------------------------------------------
+-- constants
+----------------------------------------------------------------------
 local FONT = Enum.Font.GothamSemibold
-local order = 0
+local R = 24                 -- part of the pill hidden above the screen edge (hides the top corners)
+local IDLE_W, IDLE_H = 128, 30
+local OPEN_W = 330
+local PAD_TOP = 14
+local INNER_W = OPEN_W - 24  -- 306
+local MENU_H = 192
+local GAP = 6
+local MAX_CARDS = 5
 
-local function getHolder()
-    local gui = CoreGui:FindFirstChild("STX_Notification")
-    if not gui then
-        gui = Instance.new("ScreenGui")
-        gui.Name = "STX_Notification"
-        gui.ResetOnSpawn = false
-        gui.Parent = CoreGui
-    end
+----------------------------------------------------------------------
+-- helpers
+----------------------------------------------------------------------
+local function new(class, props, parent)
+	local o = Instance.new(class)
+	for k, v in pairs(props) do
+		o[k] = v
+	end
+	if parent then
+		o.Parent = parent
+	end
+	return o
+end
 
-    local holder = gui:FindFirstChild("Holder")
-    if not holder then
-        holder = Instance.new("Frame")
-        holder.Name = "Holder"
-        holder.AnchorPoint = Vector2.new(1, 1)
-        holder.Position = UDim2.new(1, -10, 1, -10)
-        holder.Size = UDim2.new(0, 310, 1, -20)
-        holder.BackgroundTransparency = 1
-        holder.BorderSizePixel = 0
-        holder.Parent = gui
+local function tween(obj, t, props, style, dir)
+	local tw = TweenService:Create(obj, TweenInfo.new(t, style or Enum.EasingStyle.Quint, dir or Enum.EasingDirection.Out), props)
+	tw:Play()
+	return tw
+end
 
-        local layout = Instance.new("UIListLayout")
-        layout.Padding = UDim.new(0, 2)
-        layout.SortOrder = Enum.SortOrder.LayoutOrder
-        layout.VerticalAlignment = Enum.VerticalAlignment.Bottom
-        layout.HorizontalAlignment = Enum.HorizontalAlignment.Right
-        layout.Parent = holder
-    end
-    return holder
+local function measure(text, size, width)
+	return TextService:GetTextSize(text, size, FONT, Vector2.new(width, 10000))
+end
+
+-- critically-tunable spring (semi-implicit Euler with substeps)
+local function newSpring(v, f, d)
+	return { x = v, v = 0, t = v, f = f, d = d }
+end
+
+local function stepSpring(s, dt)
+	local k, c = s.f * s.f, 2 * s.d * s.f
+	local n = math.max(1, math.ceil(dt * 120))
+	local h = dt / n
+	for _ = 1, n do
+		s.v = s.v + (k * (s.t - s.x) - c * s.v) * h
+		s.x = s.x + s.v * h
+	end
+	if math.abs(s.t - s.x) < 0.02 and math.abs(s.v) < 0.02 then
+		s.x, s.v = s.t, 0
+	end
+end
+
+local function aim(s, target, expandDamping, shrinkDamping)
+	s.d = (target >= s.x) and expandDamping or shrinkDamping
+	s.t = target
+end
+
+----------------------------------------------------------------------
+-- gui
+----------------------------------------------------------------------
+local gui = new("ScreenGui", {
+	Name = "FCB_Notch",
+	IgnoreGuiInset = true,
+	ResetOnSpawn = false,
+	DisplayOrder = 10000,
+	ZIndexBehavior = Enum.ZIndexBehavior.Sibling,
+})
+do
+	local ok = pcall(function()
+		gui.Parent = (gethui and gethui()) or CoreGui
+	end)
+	if not ok or not gui.Parent then
+		gui.Parent = player:WaitForChild("PlayerGui")
+	end
+end
+
+local pill = new("CanvasGroup", {
+	Name = "Pill",
+	AnchorPoint = Vector2.new(0.5, 0),
+	Position = UDim2.new(0.5, 0, 0, -R),
+	Size = UDim2.fromOffset(30, R + 4),
+	BackgroundColor3 = Color3.new(0, 0, 0),
+	BorderSizePixel = 0,
+}, gui)
+local pillCorner = new("UICorner", { CornerRadius = UDim.new(0, IDLE_H / 2) }, pill)
+new("UIStroke", {
+	Color = Color3.fromRGB(34, 34, 38),
+	Thickness = 1,
+	Transparency = 0.35,
+	ApplyStrokeMode = Enum.ApplyStrokeMode.Border,
+}, pill)
+local uiScale = new("UIScale", {}, pill)
+
+local function updateScale()
+	local cam = workspace.CurrentCamera
+	if cam then
+		uiScale.Scale = math.clamp(cam.ViewportSize.X / 420, 0.65, 1)
+	end
+end
+updateScale()
+local scaleConn
+do
+	local cam = workspace.CurrentCamera
+	if cam then
+		scaleConn = cam:GetPropertyChangedSignal("ViewportSize"):Connect(updateScale)
+	end
+end
+
+-- click catcher (whole pill)
+local hit = new("TextButton", {
+	Name = "Hit",
+	BackgroundTransparency = 1,
+	Text = "",
+	AutoButtonColor = false,
+	Size = UDim2.fromScale(1, 1),
+	ZIndex = 1,
+}, pill)
+
+----------------------------------------------------------------------
+-- idle row
+----------------------------------------------------------------------
+local idle = new("CanvasGroup", {
+	Name = "Idle",
+	BackgroundTransparency = 1,
+	Position = UDim2.fromOffset(0, R),
+	Size = UDim2.new(1, 0, 0, IDLE_H),
+	GroupTransparency = 1,
+	ZIndex = 2,
+}, pill)
+local idleRow = new("Frame", {
+	BackgroundTransparency = 1,
+	AnchorPoint = Vector2.new(0.5, 0.5),
+	Position = UDim2.fromScale(0.5, 0.5),
+	Size = UDim2.fromOffset(0, 0),
+	AutomaticSize = Enum.AutomaticSize.XY,
+}, idle)
+new("UIListLayout", {
+	FillDirection = Enum.FillDirection.Horizontal,
+	HorizontalAlignment = Enum.HorizontalAlignment.Center,
+	VerticalAlignment = Enum.VerticalAlignment.Center,
+	Padding = UDim.new(0, 7),
+	SortOrder = Enum.SortOrder.LayoutOrder,
+}, idleRow)
+local dot = new("Frame", {
+	Size = UDim2.fromOffset(6, 6),
+	BackgroundColor3 = CFG.Accent,
+	BorderSizePixel = 0,
+	LayoutOrder = 1,
+}, idleRow)
+new("UICorner", { CornerRadius = UDim.new(1, 0) }, dot)
+local idleLabel = new("TextLabel", {
+	BackgroundTransparency = 1,
+	Size = UDim2.fromOffset(0, 16),
+	AutomaticSize = Enum.AutomaticSize.X,
+	Font = Enum.Font.GothamBold,
+	TextSize = 13,
+	TextColor3 = Color3.fromRGB(235, 235, 235),
+	Text = "--:--",
+	LayoutOrder = 2,
+}, idleRow)
+TweenService:Create(dot, TweenInfo.new(1.4, Enum.EasingStyle.Sine, Enum.EasingDirection.InOut, -1, true), {
+	BackgroundTransparency = 0.6,
+}):Play()
+
+----------------------------------------------------------------------
+-- body (menu + cards)
+----------------------------------------------------------------------
+local body = new("Frame", {
+	Name = "Body",
+	BackgroundTransparency = 1,
+	Position = UDim2.fromOffset(0, R),
+	Size = UDim2.new(1, 0, 1, -R),
+	ZIndex = 3,
+}, pill)
+new("UIPadding", {
+	PaddingTop = UDim.new(0, PAD_TOP),
+	PaddingLeft = UDim.new(0, 12),
+	PaddingRight = UDim.new(0, 12),
+}, body)
+new("UIListLayout", {
+	SortOrder = Enum.SortOrder.LayoutOrder,
+	Padding = UDim.new(0, 0),
+}, body)
+
+----------------------------------------------------------------------
+-- menu section
+----------------------------------------------------------------------
+local menuWrap = new("Frame", {
+	Name = "MenuWrap",
+	BackgroundTransparency = 1,
+	ClipsDescendants = true,
+	LayoutOrder = 0,
+	Size = UDim2.new(1, 0, 0, 0),
+}, body)
+local menu = new("CanvasGroup", {
+	Name = "Menu",
+	BackgroundTransparency = 1,
+	Size = UDim2.new(1, 0, 0, MENU_H),
+	GroupTransparency = 1,
+}, menuWrap)
+
+local avatar = new("ImageLabel", {
+	Name = "Avatar",
+	Size = UDim2.fromOffset(48, 48),
+	BackgroundColor3 = Color3.fromRGB(22, 22, 26),
+	BorderSizePixel = 0,
+	ImageTransparency = 1,
+	ScaleType = Enum.ScaleType.Crop,
+}, menu)
+new("UICorner", { CornerRadius = UDim.new(1, 0) }, avatar)
+new("UIStroke", { Color = CFG.Accent, Thickness = 1.5, Transparency = 0.45 }, avatar)
+
+new("TextLabel", {
+	Name = "DisplayName",
+	BackgroundTransparency = 1,
+	Position = UDim2.fromOffset(60, 4),
+	Size = UDim2.new(1, -150, 0, 22),
+	Font = Enum.Font.GothamBold,
+	TextSize = 17,
+	TextXAlignment = Enum.TextXAlignment.Left,
+	TextColor3 = Color3.fromRGB(245, 245, 245),
+	TextTruncate = Enum.TextTruncate.AtEnd,
+	Text = player.DisplayName,
+}, menu)
+new("TextLabel", {
+	Name = "Username",
+	BackgroundTransparency = 1,
+	Position = UDim2.fromOffset(60, 27),
+	Size = UDim2.new(1, -150, 0, 16),
+	Font = Enum.Font.GothamMedium,
+	TextSize = 12,
+	TextXAlignment = Enum.TextXAlignment.Left,
+	TextColor3 = Color3.fromRGB(128, 128, 140),
+	TextTruncate = Enum.TextTruncate.AtEnd,
+	Text = "@" .. player.Name,
+}, menu)
+
+local chip = new("TextLabel", {
+	Name = "Rank",
+	AnchorPoint = Vector2.new(1, 0),
+	Position = UDim2.new(1, 0, 0, 8),
+	Size = UDim2.fromOffset(0, 20),
+	AutomaticSize = Enum.AutomaticSize.X,
+	BackgroundColor3 = Color3.fromRGB(32, 22, 54),
+	BorderSizePixel = 0,
+	Font = Enum.Font.GothamBold,
+	TextSize = 10,
+	TextColor3 = CFG.Accent,
+	Text = "",
+	Visible = false,
+}, menu)
+new("UICorner", { CornerRadius = UDim.new(0, 10) }, chip)
+new("UIPadding", { PaddingLeft = UDim.new(0, 9), PaddingRight = UDim.new(0, 9) }, chip)
+
+local grid = new("Frame", {
+	Name = "Stats",
+	BackgroundTransparency = 1,
+	Position = UDim2.fromOffset(0, 60),
+	Size = UDim2.new(1, 0, 0, 132),
+}, menu)
+new("UIGridLayout", {
+	CellSize = UDim2.fromOffset(150, 40),
+	CellPadding = UDim2.fromOffset(6, 6),
+	SortOrder = Enum.SortOrder.LayoutOrder,
+}, grid)
+
+local function makeTile(caption, order)
+	local tile = new("Frame", {
+		BackgroundColor3 = Color3.fromRGB(17, 17, 20),
+		BorderSizePixel = 0,
+		LayoutOrder = order,
+	}, grid)
+	new("UICorner", { CornerRadius = UDim.new(0, 12) }, tile)
+	new("UIStroke", { Color = Color3.fromRGB(30, 30, 35), Thickness = 1 }, tile)
+	new("TextLabel", {
+		BackgroundTransparency = 1,
+		Position = UDim2.fromOffset(11, 5),
+		Size = UDim2.new(1, -22, 0, 11),
+		Font = Enum.Font.GothamBold,
+		TextSize = 9,
+		TextXAlignment = Enum.TextXAlignment.Left,
+		TextColor3 = Color3.fromRGB(110, 110, 122),
+		Text = caption,
+	}, tile)
+	return new("TextLabel", {
+		BackgroundTransparency = 1,
+		Position = UDim2.fromOffset(11, 18),
+		Size = UDim2.new(1, -22, 0, 17),
+		Font = Enum.Font.GothamBold,
+		TextSize = 14,
+		TextXAlignment = Enum.TextXAlignment.Left,
+		TextColor3 = Color3.fromRGB(235, 235, 235),
+		TextTruncate = Enum.TextTruncate.AtEnd,
+		Text = "-",
+	}, tile)
+end
+
+local vPlayers = makeTile("PLAYERS", 1)
+local vFps = makeTile("FPS", 2)
+local vPing = makeTile("PING", 3)
+local vTime = makeTile("TIME", 4)
+local vDate = makeTile("DATE", 5)
+local vDay = makeTile("DAY", 6)
+
+task.spawn(function()
+	local ok, img = pcall(function()
+		return Players:GetUserThumbnailAsync(player.UserId, Enum.ThumbnailType.HeadShot, Enum.ThumbnailSize.Size150x150)
+	end)
+	if ok and img and avatar.Parent then
+		avatar.Image = img
+		tween(avatar, 0.4, { ImageTransparency = 0 })
+	end
+end)
+
+----------------------------------------------------------------------
+-- live data
+----------------------------------------------------------------------
+local fps = 60
+local fpsFrames, fpsTime = 0, 0
+
+local function getPing()
+	local ok, v = pcall(function()
+		return Stats.Network.ServerStatsItem["Data Ping"]:GetValue()
+	end)
+	if ok and type(v) == "number" then
+		return math.floor(v + 0.5)
+	end
+	return nil
+end
+
+local function updateStats()
+	vPlayers.Text = #Players:GetPlayers() .. "/" .. Players.MaxPlayers
+	vFps.Text = tostring(math.floor(fps + 0.5))
+	if fps >= 50 then
+		vFps.TextColor3 = Color3.fromRGB(110, 230, 140)
+	elseif fps >= 30 then
+		vFps.TextColor3 = Color3.fromRGB(255, 200, 90)
+	else
+		vFps.TextColor3 = Color3.fromRGB(255, 100, 100)
+	end
+	local ping = getPing()
+	vPing.Text = ping and (ping .. " ms") or "-"
+	vTime.Text = os.date("%H:%M:%S")
+	vDate.Text = os.date("%d %b %Y")
+	vDay.Text = os.date("%A")
+
+	local rank = _G.FCB_MY_RANK
+	if rank then
+		chip.Text = "FCB " .. tostring(rank)
+		chip.Visible = true
+	end
+end
+
+----------------------------------------------------------------------
+-- state + layout target
+----------------------------------------------------------------------
+local springW = newSpring(30, 12, 0.72)
+local springH = newSpring(R + 4, 11, 0.72)
+local springC = newSpring(2, 14, 1)
+
+local cards = {}
+local menuOpen = false
+local hover, pressed = false, false
+local lastExpanded = nil
+local idleToken = 0
+
+local function setIdleVisible(v)
+	idleToken = idleToken + 1
+	local my = idleToken
+	if v then
+		task.delay(0.22, function()
+			if my == idleToken then
+				tween(idle, 0.3, { GroupTransparency = 0 })
+			end
+		end)
+	else
+		tween(idle, 0.15, { GroupTransparency = 1 })
+	end
+end
+
+local function recalc()
+	local expanded = menuOpen or #cards > 0
+	local w, h, cr
+	if expanded then
+		h = PAD_TOP
+		if menuOpen then
+			h = h + MENU_H + GAP
+		end
+		for _, c in ipairs(cards) do
+			h = h + c.h
+		end
+		h = h + 6
+		w, cr = OPEN_W, 28
+	else
+		w, h, cr = IDLE_W, IDLE_H, IDLE_H / 2
+		if pressed then
+			w, h = w - 6, h - 2
+		elseif hover then
+			w, h = w + 10, h + 2
+		end
+	end
+	aim(springW, w, 0.72, 0.9)
+	aim(springH, R + h, 0.7, 0.88)
+	springC.t = cr
+
+	if lastExpanded ~= expanded then
+		lastExpanded = expanded
+		setIdleVisible(not expanded)
+	end
+end
+
+----------------------------------------------------------------------
+-- menu open / close
+----------------------------------------------------------------------
+local function setMenu(open)
+	if menuOpen == open then
+		return
+	end
+	menuOpen = open
+	if open then
+		updateStats()
+		tween(menuWrap, 0.55, { Size = UDim2.new(1, 0, 0, MENU_H + GAP) })
+		task.delay(0.1, function()
+			if menuOpen then
+				tween(menu, 0.4, { GroupTransparency = 0 })
+			end
+		end)
+	else
+		tween(menu, 0.2, { GroupTransparency = 1 })
+		tween(menuWrap, 0.5, { Size = UDim2.new(1, 0, 0, 0) }, Enum.EasingStyle.Quint, Enum.EasingDirection.InOut)
+	end
+	recalc()
+end
+
+hit.MouseButton1Click:Connect(function()
+	setMenu(not menuOpen)
+end)
+hit.MouseEnter:Connect(function()
+	hover = true
+	recalc()
+end)
+hit.MouseLeave:Connect(function()
+	hover, pressed = false, false
+	recalc()
+end)
+hit.MouseButton1Down:Connect(function()
+	pressed = true
+	recalc()
+end)
+hit.MouseButton1Up:Connect(function()
+	pressed = false
+	recalc()
+end)
+
+function Notification:OpenMenu()
+	setMenu(true)
+end
+function Notification:CloseMenu()
+	setMenu(false)
+end
+function Notification:ToggleMenu()
+	setMenu(not menuOpen)
+end
+
+----------------------------------------------------------------------
+-- notification cards
+----------------------------------------------------------------------
+local cardOrder = 0
+
+local function dismiss(rec)
+	if rec.gone then
+		return
+	end
+	rec.gone = true
+	for i, c in ipairs(cards) do
+		if c == rec then
+			table.remove(cards, i)
+			break
+		end
+	end
+	recalc()
+	tween(rec.card, 0.25, { GroupTransparency = 1 })
+	tween(rec.wrap, 0.45, { Size = UDim2.new(1, 0, 0, 0) }, Enum.EasingStyle.Quint, Enum.EasingDirection.InOut)
+	task.delay(0.55, function()
+		rec.wrap:Destroy()
+	end)
+end
+
+local function addCard(notifData, opts, extra)
+	local typ = string.lower(tostring(opts.Type or "default"))
+	local duration = tonumber(opts.Time) or 5
+	local outlineColor = opts.OutlineColor or CFG.Accent
+	local title = tostring(notifData.Title or "")
+	local desc = tostring(notifData.Description or "")
+
+	local hasIcon = typ == "image"
+	local isOption = typ == "option"
+
+	local titleX = hasIcon and 40 or 12
+	local titleW = INNER_W - titleX - 12
+	local descW = INNER_W - 24
+
+	local titleH = math.max(20, measure(title, 14, titleW).Y + 4)
+	local descH = (desc ~= "") and math.max(15, measure(desc, 13, descW).Y) or 0
+	local outlineY = 8 + titleH + 2
+	local cursor
+	local descY = outlineY + 2 + 8
+	if descH > 0 then
+		cursor = descY + descH
+	else
+		cursor = outlineY + 2
+	end
+	local btnY
+	if isOption then
+		btnY = cursor + 8
+		cursor = btnY + 24
+	end
+	local cardH = cursor + 12
+
+	cardOrder = cardOrder + 1
+
+	local wrap = new("Frame", {
+		Name = "CardWrap",
+		BackgroundTransparency = 1,
+		ClipsDescendants = true,
+		LayoutOrder = cardOrder,
+		Size = UDim2.new(1, 0, 0, 0),
+	}, body)
+	local card = new("CanvasGroup", {
+		Name = "Card",
+		BackgroundColor3 = Color3.fromRGB(17, 17, 20),
+		BorderSizePixel = 0,
+		Size = UDim2.new(1, 0, 0, cardH),
+		GroupTransparency = 1,
+	}, wrap)
+	new("UICorner", { CornerRadius = UDim.new(0, 18) }, card)
+
+	local rec = { wrap = wrap, card = card, h = cardH + GAP, gone = false }
+
+	if not isOption then
+		local tap = new("TextButton", {
+			BackgroundTransparency = 1,
+			Text = "",
+			AutoButtonColor = false,
+			Size = UDim2.fromScale(1, 1),
+			ZIndex = 1,
+		}, card)
+		tap.MouseButton1Click:Connect(function()
+			dismiss(rec)
+		end)
+	end
+
+	if hasIcon then
+		new("ImageLabel", {
+			BackgroundTransparency = 1,
+			Position = UDim2.fromOffset(12, 8 + math.floor((titleH - 20) / 2)),
+			Size = UDim2.fromOffset(20, 20),
+			ZIndex = 2,
+			Image = extra.Image or "",
+			ImageColor3 = extra.ImageColor or Color3.fromRGB(255, 255, 255),
+		}, card)
+	end
+
+	new("TextLabel", {
+		BackgroundTransparency = 1,
+		Position = UDim2.fromOffset(titleX, 8),
+		Size = UDim2.fromOffset(titleW, titleH),
+		ZIndex = 2,
+		Font = FONT,
+		Text = title,
+		TextColor3 = Color3.fromRGB(235, 235, 235),
+		TextSize = 14,
+		TextWrapped = true,
+		TextXAlignment = Enum.TextXAlignment.Left,
+		TextYAlignment = Enum.TextYAlignment.Center,
+	}, card)
+
+	local track = new("Frame", {
+		BackgroundColor3 = Color3.fromRGB(38, 38, 44),
+		BorderSizePixel = 0,
+		Position = UDim2.fromOffset(12, outlineY),
+		Size = UDim2.fromOffset(INNER_W - 24, 2),
+		ZIndex = 2,
+	}, card)
+	new("UICorner", { CornerRadius = UDim.new(1, 0) }, track)
+	local bar = new("Frame", {
+		BackgroundColor3 = outlineColor,
+		BorderSizePixel = 0,
+		Position = UDim2.fromOffset(12, outlineY),
+		Size = UDim2.fromOffset(INNER_W - 24, 2),
+		ZIndex = 3,
+	}, card)
+	new("UICorner", { CornerRadius = UDim.new(1, 0) }, bar)
+
+	if descH > 0 then
+		new("TextLabel", {
+			BackgroundTransparency = 1,
+			Position = UDim2.fromOffset(12, descY),
+			Size = UDim2.fromOffset(descW, descH),
+			ZIndex = 2,
+			Font = FONT,
+			Text = desc,
+			TextColor3 = Color3.fromRGB(165, 165, 175),
+			TextSize = 13,
+			TextWrapped = true,
+			TextXAlignment = Enum.TextXAlignment.Left,
+			TextYAlignment = Enum.TextYAlignment.Top,
+		}, card)
+	end
+
+	if isOption then
+		local uncheck = new("ImageButton", {
+			Name = "Uncheck",
+			BackgroundTransparency = 1,
+			Position = UDim2.fromOffset(10, btnY),
+			Size = UDim2.fromOffset(24, 24),
+			ZIndex = 4,
+			AutoButtonColor = false,
+			Image = "http://www.roblox.com/asset/?id=6031094678",
+			ImageColor3 = Color3.fromRGB(255, 84, 84),
+		}, card)
+		local check = new("ImageButton", {
+			Name = "Check",
+			BackgroundTransparency = 1,
+			Position = UDim2.fromOffset(38, btnY),
+			Size = UDim2.fromOffset(24, 24),
+			ZIndex = 4,
+			AutoButtonColor = false,
+			Image = "http://www.roblox.com/asset/?id=6031094667",
+			ImageColor3 = Color3.fromRGB(83, 230, 50),
+		}, card)
+		uncheck.MouseButton1Click:Connect(function()
+			if rec.gone then
+				return
+			end
+			pcall(function()
+				if extra.Callback then
+					extra.Callback(false)
+				end
+			end)
+			dismiss(rec)
+		end)
+		check.MouseButton1Click:Connect(function()
+			if rec.gone then
+				return
+			end
+			pcall(function()
+				if extra.Callback then
+					extra.Callback(true)
+				end
+			end)
+			dismiss(rec)
+		end)
+	end
+
+	table.insert(cards, rec)
+	while #cards > MAX_CARDS do
+		dismiss(cards[1])
+	end
+	recalc()
+
+	-- enter animation
+	tween(wrap, 0.5, { Size = UDim2.new(1, 0, 0, cardH + GAP) })
+	task.delay(0.08, function()
+		if not rec.gone then
+			tween(card, 0.4, { GroupTransparency = 0 })
+		end
+	end)
+
+	-- timer bar + auto dismiss
+	tween(bar, duration, { Size = UDim2.fromOffset(0, 2) }, Enum.EasingStyle.Linear, Enum.EasingDirection.Out)
+	task.delay(duration, function()
+		dismiss(rec)
+	end)
 end
 
 function Notification:Notify(notifData, middledebug, all)
-    all = all or {}
-    local SelectedType = string.lower(tostring(middledebug.Type or "default"))
-    local Time = middledebug.Time or 5
-    local titleText = tostring(notifData.Title or "")
-    local descText = tostring(notifData.Description or "")
-
-    -- Measure text so the notification grows with its content
-    local hasImage = SelectedType == "image"
-    local titleX = hasImage and 32 or 10
-    local titleWidth = 300 - titleX - 10
-    local descWidth = 280
-
-    local titleBounds = TextService:GetTextSize(titleText, 14, FONT, Vector2.new(titleWidth, 10000))
-    local descBounds = TextService:GetTextSize(descText, 13, FONT, Vector2.new(descWidth, 10000))
-
-    local titleH = math.max(26, titleBounds.Y + 8)
-    local descH = math.max(16, descBounds.Y)
-    local outlineY = 6 + titleH
-    local descY = outlineY + 12
-    local windowH = descY + descH + 10
-
-    local buttonsY
-    if SelectedType == "option" then
-        buttonsY = descY + descH + 6
-        windowH = buttonsY + 22 + 8
-    end
-
-    order = order + 1
-
-    local ambientShadow = Instance.new("ImageLabel")
-    local Window = Instance.new("Frame")
-    local WindowCorner = Instance.new("UICorner")
-    local Outline_A = Instance.new("Frame")
-    local WindowTitle = Instance.new("TextLabel")
-    local WindowDescription = Instance.new("TextLabel")
-
-    ambientShadow.Name = "ambientShadow"
-    ambientShadow.LayoutOrder = order
-    ambientShadow.BackgroundTransparency = 1.000
-    ambientShadow.BorderSizePixel = 0
-    ambientShadow.Size = UDim2.new(0, 0, 0, 0)
-    ambientShadow.ClipsDescendants = true
-    ambientShadow.Image = "rbxassetid://1316045217"
-    ambientShadow.ImageColor3 = Color3.fromRGB(0, 0, 0)
-    ambientShadow.ImageTransparency = 0.400
-    ambientShadow.ScaleType = Enum.ScaleType.Slice
-    ambientShadow.SliceCenter = Rect.new(10, 10, 118, 118)
-    ambientShadow.Parent = getHolder()
-
-    Window.Name = "Window"
-    Window.Parent = ambientShadow
-    Window.BackgroundColor3 = Color3.fromRGB(8, 8, 8)
-    Window.BorderSizePixel = 0
-    Window.Position = UDim2.new(0, 5, 0, 5)
-    Window.Size = UDim2.new(0, 300, 0, windowH)
-    Window.ZIndex = 2
-    Window.ClipsDescendants = true
-
-    WindowCorner.Name = "WindowCorner"
-    WindowCorner.CornerRadius = UDim.new(0, 6)
-    WindowCorner.Parent = Window
-
-    Outline_A.Name = "Outline_A"
-    Outline_A.Parent = Window
-    Outline_A.BackgroundColor3 = middledebug.OutlineColor or Color3.fromRGB(0, 170, 255)
-    Outline_A.BorderSizePixel = 0
-    Outline_A.Position = UDim2.new(0, 0, 0, outlineY)
-    Outline_A.Size = UDim2.new(0, 300, 0, 2)
-    Outline_A.ZIndex = 5
-
-    WindowTitle.Name = "WindowTitle"
-    WindowTitle.Parent = Window
-    WindowTitle.BackgroundTransparency = 1.000
-    WindowTitle.BorderSizePixel = 0
-    WindowTitle.Position = UDim2.new(0, titleX, 0, 6)
-    WindowTitle.Size = UDim2.new(0, titleWidth, 0, titleH)
-    WindowTitle.ZIndex = 4
-    WindowTitle.Font = FONT
-    WindowTitle.Text = titleText
-    WindowTitle.TextColor3 = Color3.fromRGB(220, 220, 220)
-    WindowTitle.TextSize = 14.000
-    WindowTitle.TextWrapped = true
-    WindowTitle.TextXAlignment = Enum.TextXAlignment.Left
-
-    WindowDescription.Name = "WindowDescription"
-    WindowDescription.Parent = Window
-    WindowDescription.BackgroundTransparency = 1.000
-    WindowDescription.BorderSizePixel = 0
-    WindowDescription.Position = UDim2.new(0, 10, 0, descY)
-    WindowDescription.Size = UDim2.new(0, descWidth, 0, descH)
-    WindowDescription.ZIndex = 4
-    WindowDescription.Font = FONT
-    WindowDescription.Text = descText
-    WindowDescription.TextColor3 = Color3.fromRGB(180, 180, 180)
-    WindowDescription.TextSize = 13.000
-    WindowDescription.TextWrapped = true
-    WindowDescription.TextXAlignment = Enum.TextXAlignment.Left
-    WindowDescription.TextYAlignment = Enum.TextYAlignment.Top
-
-    local gone = false
-    local function close()
-        if gone then return end
-        gone = true
-        ambientShadow:TweenSize(UDim2.new(0, 0, 0, 0), "Out", "Quad", 0.2)
-        task.wait(0.2)
-        ambientShadow:Destroy()
-    end
-
-    -- open animation (the list layout slides the others up/down smoothly)
-    ambientShadow:TweenSize(UDim2.new(0, 310, 0, windowH + 10), "Out", "Quad", 0.2)
-
-    if SelectedType == "image" then
-        local ImageButton = Instance.new("ImageButton")
-        ImageButton.Parent = Window
-        ImageButton.BackgroundTransparency = 1.000
-        ImageButton.BorderSizePixel = 0
-        ImageButton.Position = UDim2.new(0, 6, 0, 6)
-        ImageButton.Size = UDim2.new(0, 22, 0, 22)
-        ImageButton.ZIndex = 5
-        ImageButton.AutoButtonColor = false
-        ImageButton.Image = all.Image or ""
-        ImageButton.ImageColor3 = all.ImageColor or Color3.fromRGB(255, 255, 255)
-    elseif SelectedType == "option" then
-        local Uncheck = Instance.new("ImageButton")
-        local Check = Instance.new("ImageButton")
-
-        Uncheck.Name = "Uncheck"
-        Uncheck.Parent = Window
-        Uncheck.BackgroundTransparency = 1.000
-        Uncheck.BorderSizePixel = 0
-        Uncheck.Position = UDim2.new(0, 8, 0, buttonsY)
-        Uncheck.Size = UDim2.new(0, 22, 0, 22)
-        Uncheck.ZIndex = 5
-        Uncheck.AutoButtonColor = false
-        Uncheck.Image = "http://www.roblox.com/asset/?id=6031094678"
-        Uncheck.ImageColor3 = Color3.fromRGB(255, 84, 84)
-
-        Check.Name = "Check"
-        Check.Parent = Window
-        Check.BackgroundTransparency = 1.000
-        Check.BorderSizePixel = 0
-        Check.Position = UDim2.new(0, 34, 0, buttonsY)
-        Check.Size = UDim2.new(0, 22, 0, 22)
-        Check.ZIndex = 5
-        Check.AutoButtonColor = false
-        Check.Image = "http://www.roblox.com/asset/?id=6031094667"
-        Check.ImageColor3 = Color3.fromRGB(83, 230, 50)
-
-        Uncheck.MouseButton1Click:Connect(function()
-            pcall(function() all.Callback(false) end)
-            close()
-        end)
-        Check.MouseButton1Click:Connect(function()
-            pcall(function() all.Callback(true) end)
-            close()
-        end)
-    end
-
-    Outline_A:TweenSize(UDim2.new(0, 0, 0, 2), "Out", "Linear", Time)
-    task.delay(Time, close)
+	local ok, err = pcall(addCard, notifData or {}, middledebug or {}, all or {})
+	if not ok then
+		warn("[Notch] " .. tostring(err))
+	end
 end
+
+----------------------------------------------------------------------
+-- render loop (springs + fps)
+----------------------------------------------------------------------
+local conn = RunService.RenderStepped:Connect(function(dt)
+	fpsFrames = fpsFrames + 1
+	fpsTime = fpsTime + dt
+	if fpsTime >= 0.5 then
+		fps = fpsFrames / fpsTime
+		fpsFrames, fpsTime = 0, 0
+	end
+
+	dt = math.min(dt, 1 / 20)
+	stepSpring(springW, dt)
+	stepSpring(springH, dt)
+	stepSpring(springC, dt)
+
+	pill.Size = UDim2.fromOffset(math.max(20, springW.x), math.max(R + 8, springH.x))
+	pillCorner.CornerRadius = UDim.new(0, math.max(0, springC.x))
+end)
+
+----------------------------------------------------------------------
+-- slow tick (clock, stats, idle text)
+----------------------------------------------------------------------
+local idleSwap = 0
+local function updateTick()
+	updateStats()
+	local list = {
+		os.date("%H:%M"),
+		os.date("%a, %b %d"),
+		#Players:GetPlayers() .. " online",
+		math.floor(fps + 0.5) .. " fps",
+	}
+	local cycle = CFG.IdleStyle == "cycle"
+	local want = cycle and list[(math.floor(os.clock() / 3) % #list) + 1] or list[1]
+	if idleLabel.Text ~= want then
+		if cycle then
+			idleSwap = idleSwap + 1
+			local my = idleSwap
+			task.spawn(function()
+				tween(idleLabel, 0.15, { TextTransparency = 1 })
+				task.wait(0.15)
+				if my ~= idleSwap then
+					return
+				end
+				idleLabel.Text = want
+				tween(idleLabel, 0.25, { TextTransparency = 0 })
+			end)
+		else
+			idleLabel.Text = want
+		end
+	end
+end
+
+task.spawn(function()
+	while gui.Parent do
+		pcall(updateTick)
+		task.wait(0.5)
+	end
+end)
+
+env.__FCB_NOTCH_DESTROY = function()
+	pcall(function()
+		conn:Disconnect()
+	end)
+	if scaleConn then
+		pcall(function()
+			scaleConn:Disconnect()
+		end)
+	end
+	pcall(function()
+		gui:Destroy()
+	end)
+end
+
+-- intro: the pill pops out of the top edge
+pcall(updateTick)
+recalc()
 
 return Notification
